@@ -4,20 +4,20 @@ import logging
 import config
 import numpy as np
 
-import matplotlib.pyplot as plt
-
-from keras.models import Sequential, load_model, Model
-from keras.layers import Input, Dense, Conv2D, Flatten, BatchNormalization, Activation, LeakyReLU, add
-from keras.optimizers import SGD
-from keras import regularizers
+from tensorflow.keras.models import Sequential, load_model, Model
+from tensorflow.keras.layers import Input, Dense, Conv2D, Flatten, BatchNormalization, Activation, LeakyReLU, add
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras import regularizers
+from tensorflow.keras.utils import plot_model
 
 from loss import softmax_cross_entropy_with_logits
 
 import loggers as lg
 
-import keras.backend as K
+import tensorflow.keras.backend as K
 
-from settings import run_folder, run_archive_folder
+VALUE_HEAD = 'value_head'
+POLICY_HEAD = 'policy_head'
 
 class Gen_Model():
 	def __init__(self, reg_const, learning_rate, input_dim, output_dim):
@@ -25,6 +25,7 @@ class Gen_Model():
 		self.learning_rate = learning_rate
 		self.input_dim = input_dim
 		self.output_dim = output_dim
+		self.model = None
 
 	def predict(self, x):
 		return self.model.predict(x)
@@ -32,11 +33,11 @@ class Gen_Model():
 	def fit(self, states, targets, epochs, verbose, validation_split, batch_size):
 		return self.model.fit(states, targets, epochs=epochs, verbose=verbose, validation_split = validation_split, batch_size = batch_size)
 
-	def write(self, game, version):
-		self.model.save(run_folder + 'models/version' + "{0:0>4}".format(version) + '.h5')
+	def write(self, version):
+		self.model.save(config.run_folder + 'models/version' + "{0:0>4}".format(version) + '.h5')
 
 	def read(self, game, run_number, version):
-		return load_model( run_archive_folder + game + '/run' + str(run_number).zfill(4) + "/models/version" + "{0:0>4}".format(version) + '.h5', custom_objects={'softmax_cross_entropy_with_logits': softmax_cross_entropy_with_logits})
+		return load_model( config.run_archive_folder + game + '/run' + str(run_number).zfill(4) + "/models/version" + "{0:0>4}".format(version) + '.h5', custom_objects={'softmax_cross_entropy_with_logits': softmax_cross_entropy_with_logits})
 
 	def printWeightAverages(self):
 		layers = self.model.layers
@@ -56,54 +57,25 @@ class Gen_Model():
 		lg.logger_model.info('******************')
 
 
-	def viewLayers(self):
-		layers = self.model.layers
-		for i, l in enumerate(layers):
-			x = l.get_weights()
-			print('LAYER ' + str(i))
+class RandomModel():
 
-			try:
-				weights = x[0]
-				s = weights.shape
+    def predict(self, input):
 
-				fig = plt.figure(figsize=(s[2], s[3]))  # width, height in inches
-				channel = 0
-				filter = 0
-				for i in range(s[2] * s[3]):
+        batch_size = len(input)
 
-					sub = fig.add_subplot(s[3], s[2], i + 1)
-					sub.imshow(weights[:,:,channel,filter], cmap='coolwarm', clim=(-1, 1),aspect="auto")
-					channel = (channel + 1) % s[2]
-					filter = (filter + 1) % s[3]
+        preds = [None] * 2
 
-			except:
-	
-				try:
-					fig = plt.figure(figsize=(3, len(x)))  # width, height in inches
-					for i in range(len(x)):
-						sub = fig.add_subplot(len(x), 1, i + 1)
-						if i == 0:
-							clim = (0,2)
-						else:
-							clim = (0, 2)
-						sub.imshow([x[i]], cmap='coolwarm', clim=clim,aspect="auto")
-						
-					plt.show()
+        preds[0] = np.array([[config.VALUE_DEFAULT_ACTION] for i in range(batch_size)])
+        preds[1] = [np.random.randint(-100, 100, size=config.GRID_SHAPE[1]) for i in range(batch_size)] 
 
-				except:
-					try:
-						fig = plt.figure(figsize=(3, 3))  # width, height in inches
-						sub = fig.add_subplot(1, 1, 1)
-						sub.imshow(x[0], cmap='coolwarm', clim=(-1, 1),aspect="auto")
-						
-						plt.show()
+        return preds
 
-					except:
-						pass
 
-			plt.show()
-				
-		lg.logger_model.info('------------------')
+class GenRandomModel(Gen_Model):
+
+	def __init__(self):
+		Gen_Model.__init__(self, 1, 1, 1, 1)
+		self.model = RandomModel()
 
 
 class Residual_CNN(Gen_Model):
@@ -184,7 +156,7 @@ class Residual_CNN(Gen_Model):
 			, use_bias=False
 			, activation='tanh'
 			, kernel_regularizer=regularizers.l2(self.reg_const)
-			, name = 'value_head'
+			, name = VALUE_HEAD
 			)(x)
 
 
@@ -208,12 +180,15 @@ class Residual_CNN(Gen_Model):
 
 		x = Flatten()(x)
 
+		# The output is a linear value, not a softmax, because we force the probabilities of the forbidden actions
+		# to 0 in agent.get_preds(self, state). We do this by setting the output of the policy_head to -100 before
+		# computing the softmax.
 		x = Dense(
 			self.output_dim
 			, use_bias=False
 			, activation='linear'
 			, kernel_regularizer=regularizers.l2(self.reg_const)
-			, name = 'policy_head'
+			, name = POLICY_HEAD
 			)(x)
 
 		return (x)
@@ -232,14 +207,16 @@ class Residual_CNN(Gen_Model):
 		ph = self.policy_head(x)
 
 		model = Model(inputs=[main_input], outputs=[vh, ph])
-		model.compile(loss={'value_head': 'mean_squared_error', 'policy_head': softmax_cross_entropy_with_logits},
-			optimizer=SGD(lr=self.learning_rate, momentum = config.MOMENTUM),	
-			loss_weights={'value_head': 0.5, 'policy_head': 0.5}	
-			)
 
 		return model
 
-	def convertToModelInput(self, state):
-		inputToModel =  state.binary #np.append(state.binary, [(state.playerTurn + 1)/2] * self.input_dim[1] * self.input_dim[2])
-		inputToModel = np.reshape(inputToModel, self.input_dim) 
-		return (inputToModel)
+	def compile_with_loss_weights(self, loss_weights={VALUE_HEAD: 0.5, POLICY_HEAD: 0.5}):
+
+		self.model.compile(loss={VALUE_HEAD: 'mean_squared_error', POLICY_HEAD: softmax_cross_entropy_with_logits},
+			optimizer=SGD(lr=self.learning_rate, momentum = config.MOMENTUM),	
+			loss_weights=loss_weights	
+			)
+		return self.model
+
+	def plot_cnn(self, to_file=config.run_folder + 'models/model.png'):
+		plot_model(self.model, to_file=to_file, show_shapes = True)

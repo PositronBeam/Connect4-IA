@@ -1,228 +1,198 @@
 import numpy as np
-import logging
+import functools
+
+import config
+
 
 class Game:
 
-	def __init__(self):		
-		self.currentPlayer = 1
-		self.gameState = GameState(np.array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], dtype=np.int), 1)
-		self.actionSpace = np.array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], dtype=np.int)
-		self.pieces = {'1':'X', '0': '-', '-1':'O'}
-		self.grid_shape = (6,7)
-		self.input_shape = (2,6,7)
+	def __init__(self, grid_shape = config.GRID_SHAPE):		
+		self.grid_shape = grid_shape
 		self.name = 'connect4'
-		self.state_size = len(self.gameState.binary)
-		self.action_size = len(self.actionSpace)
+		self.action_size = grid_shape[1]
+		self.reset()
 
 	def reset(self):
-		self.gameState = GameState(np.array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], dtype=np.int), 1)
-		self.currentPlayer = 1
+		self.gameState = GameState(grid_shape = self.grid_shape, currentPlayer = config.PLAYER_1)
 		return self.gameState
 
-	def step(self, action):
+
+	def step(self,action):
 		next_state, value, done = self.gameState.takeAction(action)
+		# updates current game state
 		self.gameState = next_state
-		self.currentPlayer = -self.currentPlayer
-		info = None
-		return ((next_state, value, done, info))
 
-	def identities(self, state, actionValues):
-		identities = [(state,actionValues)]
+		return (next_state, value, done)
 
-		currentBoard = state.board
-		currentAV = actionValues
 
-		currentBoard = np.array([
-			  currentBoard[6], currentBoard[5],currentBoard[4], currentBoard[3], currentBoard[2], currentBoard[1], currentBoard[0]
-			, currentBoard[13], currentBoard[12],currentBoard[11], currentBoard[10], currentBoard[9], currentBoard[8], currentBoard[7]
-			, currentBoard[20], currentBoard[19],currentBoard[18], currentBoard[17], currentBoard[16], currentBoard[15], currentBoard[14]
-			, currentBoard[27], currentBoard[26],currentBoard[25], currentBoard[24], currentBoard[23], currentBoard[22], currentBoard[21]
-			, currentBoard[34], currentBoard[33],currentBoard[32], currentBoard[31], currentBoard[30], currentBoard[29], currentBoard[28]
-			, currentBoard[41], currentBoard[40],currentBoard[39], currentBoard[38], currentBoard[37], currentBoard[36], currentBoard[35]
-			])
-
-		currentAV = np.array([
-			currentAV[6], currentAV[5],currentAV[4], currentAV[3], currentAV[2], currentAV[1], currentAV[0]
-			, currentAV[13], currentAV[12],currentAV[11], currentAV[10], currentAV[9], currentAV[8], currentAV[7]
-			, currentAV[20], currentAV[19],currentAV[18], currentAV[17], currentAV[16], currentAV[15], currentAV[14]
-			, currentAV[27], currentAV[26],currentAV[25], currentAV[24], currentAV[23], currentAV[22], currentAV[21]
-			, currentAV[34], currentAV[33],currentAV[32], currentAV[31], currentAV[30], currentAV[29], currentAV[28]
-			, currentAV[41], currentAV[40],currentAV[39], currentAV[38], currentAV[37], currentAV[36], currentAV[35]
-					])
-
-		identities.append((GameState(currentBoard, state.playerTurn), currentAV))
-
-		return identities
 
 
 class GameState():
-	def __init__(self, board, playerTurn):
-		self.board = board
-		self.pieces = {'1':'X', '0': '-', '-1':'O'}
-		self.winners = [
-			[0,1,2,3],
-			[1,2,3,4],
-			[2,3,4,5],
-			[3,4,5,6],
-			[7,8,9,10],
-			[8,9,10,11],
-			[9,10,11,12],
-			[10,11,12,13],
-			[14,15,16,17],
-			[15,16,17,18],
-			[16,17,18,19],
-			[17,18,19,20],
-			[21,22,23,24],
-			[22,23,24,25],
-			[23,24,25,26],
-			[24,25,26,27],
-			[28,29,30,31],
-			[29,30,31,32],
-			[30,31,32,33],
-			[31,32,33,34],
-			[35,36,37,38],
-			[36,37,38,39],
-			[37,38,39,40],
-			[38,39,40,41],
 
-			[0,7,14,21],
-			[7,14,21,28],
-			[14,21,28,35],
-			[1,8,15,22],
-			[8,15,22,29],
-			[15,22,29,36],
-			[2,9,16,23],
-			[9,16,23,30],
-			[16,23,30,37],
-			[3,10,17,24],
-			[10,17,24,31],
-			[17,24,31,38],
-			[4,11,18,25],
-			[11,18,25,32],
-			[18,25,32,39],
-			[5,12,19,26],
-			[12,19,26,33],
-			[19,26,33,40],
-			[6,13,20,27],
-			[13,20,27,34],
-			[20,27,34,41],
+	def __init__(self, currentPlayer, grid_shape = None, board=None):
 
-			[3,9,15,21],
-			[4,10,16,22],
-			[10,16,22,28],
-			[5,11,17,23],
-			[11,17,23,29],
-			[17,23,29,35],
-			[6,12,18,24],
-			[12,18,24,30],
-			[18,24,30,36],
-			[13,19,25,31],
-			[19,25,31,37],
-			[20,26,32,38],
+		self.currentPlayer = currentPlayer
+		if board is not None:
+			self.board = board
+		else:
+			self.board = np.full(grid_shape, config.NONE, dtype=np.int8)
+		self.id = self._generate_id()
 
-			[3,11,19,27],
-			[2,10,18,26],
-			[10,18,26,34],
-			[1,9,17,25],
-			[9,17,25,33],
-			[17,25,33,41],
-			[0,8,16,24],
-			[8,16,24,32],
-			[16,24,32,40],
-			[7,15,23,31],
-			[15,23,31,39],
-			[14,22,30,38],
-			]
-		self.playerTurn = playerTurn
-		self.binary = self._binary()
-		self.id = self._convertStateToId()
-		self.allowedActions = self._allowedActions()
-		self.isEndGame = self._checkForEndGame()
-		self.value = self._getValue()
-		self.score = self._getScore()
+	def generate_symetric_state(self):
 
-	def _allowedActions(self):
-		allowed = []
-		for i in range(len(self.board)):
-			if i >= len(self.board) - 7:
-				if self.board[i]==0:
-					allowed.append(i)
-			else:
-				if self.board[i] == 0 and self.board[i+7] != 0:
-					allowed.append(i)
-
-		return allowed
-
-	def _binary(self):
-
-		currentplayer_position = np.zeros(len(self.board), dtype=np.int)
-		currentplayer_position[self.board==self.playerTurn] = 1
-
-		other_position = np.zeros(len(self.board), dtype=np.int)
-		other_position[self.board==-self.playerTurn] = 1
-
-		position = np.append(currentplayer_position,other_position)
-
-		return (position)
-
-	def _convertStateToId(self):
-		player1_position = np.zeros(len(self.board), dtype=np.int)
-		player1_position[self.board==1] = 1
-
-		other_position = np.zeros(len(self.board), dtype=np.int)
-		other_position[self.board==-1] = 1
-
-		position = np.append(player1_position,other_position)
-
-		id = ''.join(map(str,position))
-
-		return id
-
-	def _checkForEndGame(self):
-		if np.count_nonzero(self.board) == 42:
-			return 1
-
-		for x,y,z,a in self.winners:
-			if (self.board[x] + self.board[y] + self.board[z] + self.board[a] == 4 * -self.playerTurn):
-				return 1
-		return 0
+		#Astuce: pour prendre le symetrique de board par rapport à la colonne 3, on fait ceci:
+		# on voudrait utiliser "reversed" pour inverser les colonnes, mais on ne peut pas le faire directement
+		# car "reversed" inverse les lignes
+		# => on transforme les colonnes en lignes en prenant la transpose, on inverse les lignes, et on retranspose
+		symetric_board = np.array(list(reversed(self.board.T))).T
+		
+		symetric_game_state = GameState(self.currentPlayer, board=symetric_board)
+		return symetric_game_state
 
 
-	def _getValue(self):
-		# This is the value of the state for the current player
-		# i.e. if the previous player played a winning move, you lose
-		for x,y,z,a in self.winners:
-			if (self.board[x] + self.board[y] + self.board[z] + self.board[a] == 4 * -self.playerTurn):
-				return (-1, -1, 1)
-		return (0, 0, 0)
+	def get_board_for_neural_network(self):
 
+		# TODO symétrie par rapport à l'axe central: on peut diviser par 2 les états possibles en
+		# ne considérant que les états où il y a davantage de jetons à gauche de l'axe de symétrie. Pour ce faire:
+		# quand on est dans un état où il y a davantage de jetons à droite, on calcule son symétrique, et c'est 
+		# son symétrique qu'on renvoie. Par contre ensuite, il faut se souvenir que le réseau de neurones
+		# voit le symétrique de l'état réel, car il faut prendre le symétrique de l'action qu'il va calculer
 
-	def _getScore(self):
-		tmp = self.value
-		return (tmp[1], tmp[2])
+		# Si c'est au tour de PLAYER_2, on inverse le point de vue.
+		# Ainsi, le réseau de neurones est toujours le joueur 1 et son adversaire est toujours le joueur -1
+		result = self.board * self.currentPlayer
 
+		return result
 
+		
 
+	def allowedActions(self):
+		"""Returns [True, True, True, True, True, True, True]... one boolean per authorized action"""
+		allowed_actions = (self.board[-1,:] == config.NONE)
+		return allowed_actions
+
+	def checkForEndGame(self):
+		"""Returns true if no action is possible"""
+		"""Does NOT check for victory of the players"""
+		allowed_actions = self.allowedActions()
+		result = all(p == False for p in allowed_actions)
+		return result
 
 	def takeAction(self, action):
-		newBoard = np.array(self.board)
-		newBoard[action]=self.playerTurn
+		"""action must be between 0 (most left) and 6 (most right - ie. grid_shape[1]-1)"""
+		"""Computes (newState, value, done)"""
+		"""newState: GameState representing the state of the game after the current player has taken action"""
+		"""value: reward for that action"""
+		"""done: 1 if end of the game, 0 otherwise"""
+
+		# See agent.evaluateLeaf(): the agent won't chose a forbidden action (ie. chose a full column), 
+		# so we don't have to handle that case
+
+		next_board = np.copy(self.board)
+		# The bottom line has number 0, the top line has number 5 (ie. grid_shape[0]-1)
+		column_content = next_board[:,action]
+		indice_of_none = np.where(column_content == config.NONE)[0][0]
+		column_content[indice_of_none] = self.currentPlayer
+
+		next_state = GameState(currentPlayer=-self.currentPlayer, board=next_board)
+
+		done = next_state._isVictory(action, self.currentPlayer)
+		value = config.VALUE_VICTORY if done else config.VALUE_DEFAULT_ACTION
+
+		if not done:
+			done = next_state.checkForEndGame()
+
+		return (next_state, -value, done) 
+
+	def _generate_id(self):
+		"""Computes a unique id for that state (another identical state will have the same id)"""
+		"""The id is as small as possible for saving memory space (even so, it is a 85-bits integer)"""
+
+		board_as_line = np.reshape(self.board, -1)
+		player1_line = (board_as_line == config.PLAYER_1)
+		player2_line = (board_as_line == config.PLAYER_2)
+		result_line = np.concatenate((player1_line,player2_line,[self.currentPlayer==config.PLAYER_1])).tolist()
+		# See https://stackoverflow.com/questions/25583312/changing-an-array-of-true-and-false-answers-to-a-hex-value-python
+		result_line_val = functools.reduce(lambda byte, bit: byte*2 + bit, result_line, 0)
+		return result_line_val
+
+	@staticmethod
+	def from_id(id, grid_shape):
+		"""Generates a GameState from id"""
+
+		# See https://stackoverflow.com/questions/33608280/convert-4-bit-integer-into-boolean-list/33608387
+		nb_booleans = grid_shape[0] * grid_shape[1] * 2 + 1		
+		full_state = np.flip(np.array([bool(id & (1<<n)) for n in range(nb_booleans)]))
+		player1_board = full_state[:grid_shape[0] * grid_shape[1]].reshape(grid_shape[0], grid_shape[1])
+		player2_board = full_state[grid_shape[0] * grid_shape[1]:-1].reshape(grid_shape[0], grid_shape[1])
+		current_player = full_state[-1]
+
+		board = player1_board * config.PLAYER_1 + player2_board * config.PLAYER_2
+		current_player = config.PLAYER_1 if current_player else config.PLAYER_2
+
+		result = GameState(current_player, board=board.astype(np.int8))
+		return result
+
+	@staticmethod
+	def current_player_from_id(id):
+
+		current_player = bool(id & (1<<0))
+		current_player = config.PLAYER_1 if current_player else config.PLAYER_2
+		return current_player
+
+
+	def _isVictory(self, latestAction, currentPlayer):
+		"""Returns True if latestAction led currentPlayer to victory"""
+
+		# column range for the *start* of the loop
+		min_column = max(0, latestAction-config.NB_TOKENS_VICTORY+1)
+		max_column = min(self.board.shape[1]-config.NB_TOKENS_VICTORY, latestAction)
 		
-		newState = GameState(newBoard, -self.playerTurn)
+		column_content = self.board[:,latestAction]
+		line_of_latest_action = None
+		for i in range(self.board.shape[0]-1,-1,-1):
+			if column_content[i] != config.NONE:
+				line_of_latest_action = i
+				break
 
-		value = 0
-		done = 0
+		# Check victory in the line of latest action
+		for column in range(min_column, max_column+1):
+			tokens = self.board[line_of_latest_action,column:column+config.NB_TOKENS_VICTORY]
+			victory = all(p == currentPlayer for p in tokens)
+			if victory: 
+				return True
 
-		if newState.isEndGame:
-			value = newState.value[0]
-			done = 1
+		# Check victory in the column of latest action
+		min_line = max(0, line_of_latest_action-config.NB_TOKENS_VICTORY+1)
+		tokens = column_content[min_line:min_line+config.NB_TOKENS_VICTORY]
+		victory = all(p == currentPlayer for p in tokens)
+		if victory: 
+			return True
 
-		return (newState, value, done) 
+		# Check victory in the first diagonal of latest action (bas gauche, haut droit)
+		for line, column in zip(range(line_of_latest_action-config.NB_TOKENS_VICTORY+1,line_of_latest_action+1), range(latestAction-config.NB_TOKENS_VICTORY+1, latestAction+1)):
+			if line <= self.board.shape[0]-config.NB_TOKENS_VICTORY and line >= 0 and column >=0 and column <= self.board.shape[1]-config.NB_TOKENS_VICTORY:
+				tokens = [self.board[l,c] for l,c in zip(range(line,line+config.NB_TOKENS_VICTORY), range(column, column+config.NB_TOKENS_VICTORY))]
+				victory = all(p == currentPlayer for p in tokens)
+				if victory: 
+					return True
 
 
+		# Check victory in the second diagonal of latest action (haut gauche, bas droit)
+		for line, column in zip(range(line_of_latest_action+config.NB_TOKENS_VICTORY-1,line_of_latest_action-1,-1), range(latestAction-config.NB_TOKENS_VICTORY+1, latestAction+1)):
+			if line < self.board.shape[0] and line >= config.NB_TOKENS_VICTORY-1 and column >=0 and column <= self.board.shape[1]-config.NB_TOKENS_VICTORY:
+				tokens = [self.board[l,c] for l,c in zip(range(line,line-config.NB_TOKENS_VICTORY,-1), range(column, column+config.NB_TOKENS_VICTORY))]
+				victory = all(p == currentPlayer for p in tokens)
+				if victory: 
+					return True
+		
+		return False
 
 
-	def render(self, logger):
-		for r in range(6):
-			logger.info([self.pieces[str(x)] for x in self.board[7*r : (7*r + 7)]])
-		logger.info('--------------')
+	def render(self):
+
+		result=''
+		for r in reversed(range(self.board.shape[0])):
+			result = result + str([config.RENDER_PLAYERS[x] for x in self.board[r]]) + '\n'
+
+		return result

@@ -1,6 +1,7 @@
 
 from game import Game, GameState
-from model import Residual_CNN
+from model import Residual_CNN, GenRandomModel, VALUE_HEAD, POLICY_HEAD
+
 from memory import Memory
 from agent import Agent
 
@@ -9,8 +10,6 @@ import config
 import play_matches
 import pickle
 import random
-
-
 
 CURRENT_PLAYER_NAME = 'current_player'
 BEST_PLAYER_NAME = 'best_player'
@@ -21,16 +20,6 @@ lg.logger_main.info('=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*')
 
 
 memory = Memory(config.MEMORY_SIZE)
-
-# See "https://github.com/tensorflow/tensorflow/issues/24828": without that part of code, I got an error:
-#"tensorflow.python.framework.errors_impl.UnknownError:  Failed to get convolution algorithm. This is probably because cuDNN failed to initialize, so try looking to see if a warning log message was printed above."
-
-import tensorflow as tf
-
-physical_devices = tf.config.experimental.list_physical_devices('GPU') 
-for physical_device in physical_devices: 
-    tf.config.experimental.set_memory_growth(physical_device, True)
-
 
 # The idea is as follows:
 # player1 has to play. His Monte Carlo Tree Search does N simulations in order to evaluate the best possible move.
@@ -46,11 +35,17 @@ env = Game()
 
 # create an untrained neural network objects from the config file
 current_NN = Residual_CNN(config.REG_CONST, config.LEARNING_RATE, (1,) + config.GRID_SHAPE,   config.GRID_SHAPE[1], config.HIDDEN_CNN_LAYERS)
+current_NN.compile_with_loss_weights(loss_weights={VALUE_HEAD: 0.0, POLICY_HEAD: 1.0})
 best_NN = Residual_CNN(config.REG_CONST, config.LEARNING_RATE, (1,) +  config.GRID_SHAPE,   config.GRID_SHAPE[1], config.HIDDEN_CNN_LAYERS)
+best_NN.compile_with_loss_weights(loss_weights={VALUE_HEAD: 0.0, POLICY_HEAD: 1.0})
 best_NN.model.set_weights(current_NN.model.get_weights())
 
-current_player = Agent(CURRENT_PLAYER_NAME, config.GRID_SHAPE[0] * config.GRID_SHAPE[1], config.GRID_SHAPE[1], config.MCTS_SIMS, config.CPUCT, current_NN)
-best_player = Agent(BEST_PLAYER_NAME, config.GRID_SHAPE[0] * config.GRID_SHAPE[1], config.GRID_SHAPE[1], config.MCTS_SIMS, config.CPUCT, best_NN)
+# Au début, les réseaux de neurones font n'importe quoi, du coup j'essaie un truc plus déterministe: un MCTS qui fait 5000 simulations par coup
+# Les pi (probas des coups) seront de bonne qualité, mais les action value (estimation de la récompense) seront toujours à 0
+# Du coup au 1er training, je répartis le poids des heads des réseaux de neurones uniquement sur les pi
+# Ensuite, je vide la mémoire pour vider les AV (ça vide aussi les pi, tant pis) et je remets des poids à 0.5 partout pour les heads
+current_player = Agent(CURRENT_PLAYER_NAME, config.GRID_SHAPE[0] * config.GRID_SHAPE[1], config.GRID_SHAPE[1], 5000, config.CPUCT, GenRandomModel())
+best_player = Agent(BEST_PLAYER_NAME, config.GRID_SHAPE[0] * config.GRID_SHAPE[1], config.GRID_SHAPE[1], 5000, config.CPUCT, GenRandomModel())
 
 best_player_version = 0
 
@@ -66,16 +61,28 @@ while 1:
 
     ######## SELF PLAY ########
     lg.logger_main.info('SELF PLAYING ' + str(config.EPISODES) + ' EPISODES...')
-    _, memory, _, _ = play_matches.playMatches(best_player, best_player, config.EPISODES, lg.logger_main, turns_until_tau0 = config.TURNS_UNTIL_TAU0, memory = memory)
+    _, memory, _, _ = play_matches.playMatches(current_player, best_player, config.EPISODES, lg.logger_main, turns_until_tau0 = config.TURNS_UNTIL_TAU0, memory = memory)
     
     memory.clear_stmemory()
     
     if len(memory.ltmemory) >= config.MEMORY_SIZE:
 
         ######## RETRAINING ########
+        if iteration == 1:
+            current_player.model = current_NN
+            best_player.model = best_NN
+            current_player.MCTSsimulations = config.MCTS_SIMS
+            best_player.MCTSsimulations = config.MCTS_SIMS
+        else:
+            best_NN.compile_with_loss_weights(loss_weights={VALUE_HEAD: 0.5, POLICY_HEAD: 0.5})
+            current_NN.compile_with_loss_weights(loss_weights={VALUE_HEAD: 0.5, POLICY_HEAD: 0.5})
         lg.logger_main.info('RETRAINING...')
         current_player.replay(memory.ltmemory)
 
+        if iteration == 1: 
+            pickle.dump( memory, open( config.run_folder + "memory/memory" + str(iteration).zfill(4) + ".p", "wb" ) )
+            memory.clear_ltmemory()
+            
         if iteration % 5 == 0:
             pickle.dump( memory, open( config.run_folder + "memory/memory" + str(iteration).zfill(4) + ".p", "wb" ) )
 

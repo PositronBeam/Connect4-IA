@@ -1,0 +1,6 @@
+name: connect4
+dependencies:
+  - python=3.7
+  - cudnn=7.6.5=cuda10.1_0
+  - tensorflow-gpu=2.1.0
+  - pydot=1.4.1
